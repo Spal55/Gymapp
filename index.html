@@ -1,0 +1,109 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PulseForge Gym Admin</title>
+    <link rel="manifest" href="manifest.json">
+    <meta name="theme-color" content="#0f172a">
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700;800&family=Sora:wght@500;600;700;800&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="styles.css">
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+</head>
+<body>
+    <div class="bg-orb orb-one"></div>
+    <div class="bg-orb orb-two"></div>
+    <div class="bg-grid"></div>
+
+    <div id="loginSection" class="auth-container">
+        <div class="card auth-card">
+            <p class="eyebrow">Admin Console</p>
+            <h2>Welcome Back, Coach</h2>
+            <p class="subtitle">Manage members, track renewals, and keep operations smooth.</p>
+            <div class="form-field">
+                <label for="loginEmail">Email</label>
+                <input type="email" id="loginEmail" placeholder="coach@gym.com">
+            </div>
+            <div class="form-field">
+                <label for="loginPassword">Password</label>
+                <input type="password" id="loginPassword" placeholder="••••••••">
+            </div>
+            <button onclick="handleLogin()" class="btn">Login</button>
+        </div>
+    </div>
+
+    <div id="dashboardSection" class="container app-shell" style="display: none;">
+        <header class="topbar">
+            <div>
+                <p class="eyebrow">PulseForge</p>
+                <h1>Gym Command Center</h1>
+            </div>
+            <div class="stats-strip">
+                <article class="stat-chip">
+                    <span>Active Members</span>
+                    <strong id="activeCount">0</strong>
+                </article>
+                <article class="stat-chip warning">
+                    <span>Expiring in 7 Days</span>
+                    <strong id="expiringSoonCount">0</strong>
+                </article>
+            </div>
+            <button onclick="handleLogout()" class="btn-outline">Logout</button>
+        </header>
+
+        <section class="card card-spotlight">
+            <h3>Add New Member</h3>
+            <p class="subtitle">Capture details and auto-calculate plan expiry instantly.</p>
+            <div class="grid-form">
+                <div class="form-field">
+                    <label for="fullName">Full Name</label>
+                    <input type="text" id="fullName" placeholder="Aarav Sharma">
+                </div>
+                <div class="form-field">
+                    <label for="phone">Phone Number</label>
+                    <input type="tel" id="phone" placeholder="9876543210">
+                </div>
+                <div class="form-field">
+                    <label for="joinDate">Join Date</label>
+                    <input type="date" id="joinDate">
+                </div>
+                <div class="form-field">
+                    <label for="plan">Membership Plan</label>
+                    <select id="plan">
+                        <option value="1">1 Month</option>
+                        <option value="3">3 Months</option>
+                        <option value="6">6 Months</option>
+                        <option value="12">1 Year</option>
+                    </select>
+                </div>
+                <button onclick="addMember()" class="btn">Register & Save</button>
+            </div>
+        </section>
+
+        <section class="card">
+            <h3>Active Members</h3>
+            <p class="subtitle">Sorted by expiry date to help you prioritize follow-ups.</p>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Name</th>
+                            <th>Phone</th>
+                            <th>Expiry Date</th>
+                            <th>Actions</th>
+                        </tr>
+                    </thead>
+                    <tbody id="membersTableBody">
+                    </tbody>
+                </table>
+            </div>
+        </section>
+    </div>
+
+    <div id="toastContainer" class="toast-container" aria-live="polite" aria-atomic="true"></div>
+
+    <script src="app.js"></script>
+</body>
+</html>
