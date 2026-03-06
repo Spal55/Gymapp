@@ -5,6 +5,23 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 const ERROR_LOG_KEY = 'gymapp_error_log';
 const ERROR_LOG_LIMIT = 40;
 
+const PLAN_PRICING = {
+    '1': 1000,
+    '3': 2700,
+    '6': 4800,
+    '12': 8400
+};
+
+const PLAN_LABELS = {
+    '1': '1 Month',
+    '3': '3 Months',
+    '6': '6 Months',
+    '12': '1 Year'
+};
+
+let currentMembers = [];
+let editingMemberIndex = null;
+
 const appLogger = {
     info(message, context = {}) {
         console.info(`[GymApp] ${message}`, context);
@@ -76,6 +93,22 @@ function formatDate(dateText) {
     }).format(parsed);
 }
 
+function formatRupees(amount) {
+    return new Intl.NumberFormat('en-IN', {
+        style: 'currency',
+        currency: 'INR',
+        maximumFractionDigits: 0
+    }).format(amount);
+}
+
+function getPlanAmount(planMonths) {
+    return PLAN_PRICING[String(planMonths)] || 0;
+}
+
+function getPlanLabel(planMonths) {
+    return PLAN_LABELS[String(planMonths)] || `${planMonths} Months`;
+}
+
 async function handleLogin() {
     try {
         const email = document.getElementById('loginEmail').value.trim();
@@ -140,13 +173,20 @@ async function checkUser() {
     }
 }
 
-function calculateExpiry(joinDate, months) {
-    const date = new Date(joinDate);
+function calculateExpiry(startDate, months) {
+    const date = new Date(startDate);
     date.setMonth(date.getMonth() + Number.parseInt(months, 10));
     return date.toISOString().split('T')[0];
 }
 
+function getTodayIsoDate() {
+    const now = new Date();
+    const local = new Date(now.getTime() - now.getTimezoneOffset() * 60000);
+    return local.toISOString().slice(0, 10);
+}
+
 function clearMemberForm() {
+    document.getElementById('memberId').value = '';
     document.getElementById('fullName').value = '';
     document.getElementById('phone').value = '';
     document.getElementById('joinDate').value = '';
@@ -169,13 +209,19 @@ function updateStats(members) {
 
 async function addMember() {
     try {
+        const memberId = document.getElementById('memberId').value.trim().toUpperCase();
         const name = document.getElementById('fullName').value.trim();
         const phone = document.getElementById('phone').value.trim();
         const joinDate = document.getElementById('joinDate').value;
         const months = document.getElementById('plan').value;
 
-        if (!name || !phone || !joinDate || !months) {
+        if (!memberId || !name || !phone || !joinDate || !months) {
             showToast('info', 'Missing Details', 'Please fill in all member fields.');
+            return;
+        }
+
+        if (!/^[A-Z0-9-]{3,20}$/.test(memberId)) {
+            showToast('error', 'Invalid Member ID', 'Use 3-20 characters: letters, numbers, or dash.');
             return;
         }
 
@@ -184,8 +230,15 @@ async function addMember() {
             return;
         }
 
+        const duplicateMember = currentMembers.some((member) => String(member.member_id || '').toUpperCase() === memberId);
+        if (duplicateMember) {
+            showToast('error', 'Duplicate Member ID', 'This Member ID already exists. Use a unique ID.');
+            return;
+        }
+
         const expiryDate = calculateExpiry(joinDate, months);
         const payload = {
+            member_id: memberId,
             full_name: name,
             phone_number: phone,
             join_date: joinDate,
@@ -201,7 +254,7 @@ async function addMember() {
             return;
         }
 
-        showToast('success', 'Member Added', `${name} has been registered successfully.`);
+        showToast('success', 'Member Added', `${name} (${memberId}) has been registered.`);
         clearMemberForm();
         fetchMembers();
     } catch (error) {
@@ -210,9 +263,85 @@ async function addMember() {
     }
 }
 
+function openEditMemberModal(index) {
+    const member = currentMembers[index];
+    if (!member) {
+        showToast('error', 'Member Missing', 'Could not load this member record.');
+        return;
+    }
+
+    editingMemberIndex = index;
+    document.getElementById('editMemberId').value = member.member_id || 'N/A';
+    document.getElementById('editPhone').value = member.phone_number || '';
+    document.getElementById('editPlan').value = String(member.plan_months || '1');
+    document.getElementById('editMemberModal').classList.remove('hidden');
+}
+
+function closeEditModal() {
+    editingMemberIndex = null;
+    document.getElementById('editMemberModal').classList.add('hidden');
+}
+
+async function saveMemberUpdates() {
+    try {
+        if (editingMemberIndex === null) {
+            showToast('error', 'No Member Selected', 'Open a member before saving changes.');
+            return;
+        }
+
+        const member = currentMembers[editingMemberIndex];
+        if (!member) {
+            showToast('error', 'Member Missing', 'Could not load this member record.');
+            return;
+        }
+
+        const phone = document.getElementById('editPhone').value.trim();
+        const planMonths = document.getElementById('editPlan').value;
+
+        if (!/^\d{10}$/.test(phone)) {
+            showToast('error', 'Invalid Phone', 'Phone number must be exactly 10 digits.');
+            return;
+        }
+
+        const renewalStart = getTodayIsoDate();
+        const newExpiry = calculateExpiry(renewalStart, planMonths);
+        const updatePayload = {
+            phone_number: phone,
+            plan_months: planMonths,
+            join_date: renewalStart,
+            expiry_date: newExpiry
+        };
+
+        let query = supabaseClient.from('members').update(updatePayload);
+        if (member.id !== undefined && member.id !== null) {
+            query = query.eq('id', member.id);
+        } else {
+            query = query.eq('member_id', member.member_id);
+        }
+
+        const { error } = await query;
+
+        if (error) {
+            appLogger.warn('Update member failed', { reason: error.message, updatePayload, member });
+            showToast('error', 'Update Failed', error.message);
+            return;
+        }
+
+        closeEditModal();
+        showToast('success', 'Member Updated', `${member.full_name} updated. Next billing: ${formatDate(newExpiry)}.`);
+        fetchMembers();
+    } catch (error) {
+        appLogger.error('Unexpected error while updating member', error);
+        showToast('error', 'Unexpected Error', 'Could not update member details right now.');
+    }
+}
+
 async function fetchMembers() {
     try {
-        const { data, error } = await supabaseClient.from('members').select('*').order('expiry_date', { ascending: true });
+        const { data, error } = await supabaseClient
+            .from('members')
+            .select('*')
+            .order('expiry_date', { ascending: true });
 
         if (error) {
             appLogger.warn('Fetch members failed', { reason: error.message });
@@ -221,36 +350,43 @@ async function fetchMembers() {
         }
 
         const members = data || [];
+        currentMembers = members;
+
         const tbody = document.getElementById('membersTableBody');
         updateStats(members);
 
         if (!members.length) {
             tbody.innerHTML = `
                 <tr>
-                    <td class="empty" colspan="4">No members added yet. Register your first member above.</td>
+                    <td class="empty" colspan="7">No members added yet. Register your first member above.</td>
                 </tr>
             `;
             return;
         }
 
-        tbody.innerHTML = members.map((member) => {
+        tbody.innerHTML = members.map((member, index) => {
+            const memberId = escapeHtml(member.member_id || '-');
             const fullName = escapeHtml(member.full_name || 'Unknown');
             const phone = escapeHtml(member.phone_number || '-');
+            const planMonths = String(member.plan_months || '1');
+            const planLabel = escapeHtml(getPlanLabel(planMonths));
+            const billAmount = formatRupees(getPlanAmount(planMonths));
             const expiryRaw = member.expiry_date || '-';
             const expiry = escapeHtml(formatDate(expiryRaw));
-            const safeName = JSON.stringify(member.full_name || '');
-            const safePhone = JSON.stringify(member.phone_number || '');
-            const safeExpiry = JSON.stringify(member.expiry_date || '');
 
             return `
                 <tr>
-                    <td><strong>${fullName}</strong></td>
+                    <td><strong>${memberId}</strong></td>
+                    <td>${fullName}</td>
                     <td>${phone}</td>
+                    <td><span class="plan-pill">${planLabel}</span></td>
+                    <td>${billAmount}</td>
                     <td>${expiry}</td>
                     <td>
-                        <button class="btn-wa" onclick="sendBill(${safePhone}, ${safeName}, ${safeExpiry})">
-                            WhatsApp Bill
-                        </button>
+                        <div class="action-group">
+                            <button class="btn-edit" onclick="openEditMemberModal(${index})">Edit</button>
+                            <button class="btn-wa" onclick="sendBillForMember(${index})">WhatsApp Bill</button>
+                        </div>
                     </td>
                 </tr>
             `;
@@ -261,11 +397,30 @@ async function fetchMembers() {
     }
 }
 
-function sendBill(phone, name, expiry) {
-    const msg = `Hi ${name}, payment received! Your gym membership is active until ${expiry}. See you at the gym!`;
+function sendBillForMember(index) {
+    const member = currentMembers[index];
+    if (!member) {
+        showToast('error', 'Member Missing', 'Could not load this member record.');
+        return;
+    }
+
+    const phone = String(member.phone_number || '').trim();
+    if (!/^\d{10}$/.test(phone)) {
+        showToast('error', 'Invalid Phone', 'This member has an invalid phone number.');
+        return;
+    }
+
+    const planMonths = String(member.plan_months || '1');
+    const amount = formatRupees(getPlanAmount(planMonths));
+    const planName = getPlanLabel(planMonths);
+    const nextBilling = formatDate(member.expiry_date || '-');
+    const memberCode = member.member_id || '-';
+
+    const msg = `Hi ${member.full_name}, payment of ${amount} received for ${planName} plan. Member ID: ${memberCode}. Next billing date: ${nextBilling}. Thank you for training with us!`;
     const url = `https://wa.me/91${phone}?text=${encodeURIComponent(msg)}`;
+
     window.open(url, '_blank');
-    showToast('info', 'WhatsApp Opened', `Billing message for ${name} is ready.`);
+    showToast('info', 'WhatsApp Opened', `Billing message ready for ${member.full_name}.`);
 }
 
 if ('serviceWorker' in navigator) {
@@ -288,6 +443,18 @@ window.addEventListener('error', (event) => {
 window.addEventListener('unhandledrejection', (event) => {
     appLogger.error('Unhandled promise rejection', event.reason);
     showToast('error', 'Request Error', 'A request failed unexpectedly.');
+});
+
+document.getElementById('editMemberModal').addEventListener('click', (event) => {
+    if (event.target.id === 'editMemberModal') {
+        closeEditModal();
+    }
+});
+
+window.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape') {
+        closeEditModal();
+    }
 });
 
 checkUser();

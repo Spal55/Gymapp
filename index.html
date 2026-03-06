@@ -58,6 +58,10 @@
             <p class="subtitle">Capture details and auto-calculate plan expiry instantly.</p>
             <div class="grid-form">
                 <div class="form-field">
+                    <label for="memberId">Member ID</label>
+                    <input type="text" id="memberId" placeholder="PF-001">
+                </div>
+                <div class="form-field">
                     <label for="fullName">Full Name</label>
                     <input type="text" id="fullName" placeholder="Aarav Sharma">
                 </div>
@@ -72,10 +76,10 @@
                 <div class="form-field">
                     <label for="plan">Membership Plan</label>
                     <select id="plan">
-                        <option value="1">1 Month</option>
-                        <option value="3">3 Months</option>
-                        <option value="6">6 Months</option>
-                        <option value="12">1 Year</option>
+                        <option value="1">1 Month - Rs 1000</option>
+                        <option value="3">3 Months - Rs 2700</option>
+                        <option value="6">6 Months - Rs 4800</option>
+                        <option value="12">1 Year - Rs 8400</option>
                     </select>
                 </div>
                 <button onclick="addMember()" class="btn">Register & Save</button>
@@ -89,8 +93,11 @@
                 <table>
                     <thead>
                         <tr>
+                            <th>Member ID</th>
                             <th>Name</th>
                             <th>Phone</th>
+                            <th>Plan</th>
+                            <th>Bill</th>
                             <th>Expiry Date</th>
                             <th>Actions</th>
                         </tr>
@@ -100,6 +107,34 @@
                 </table>
             </div>
         </section>
+    </div>
+
+    <div id="editMemberModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="editMemberTitle">
+        <div class="modal-card">
+            <h3 id="editMemberTitle">Update Member</h3>
+            <p class="subtitle">Change mobile number and package. Next billing date will update from today.</p>
+            <div class="form-field">
+                <label for="editMemberId">Member ID</label>
+                <input type="text" id="editMemberId" readonly>
+            </div>
+            <div class="form-field">
+                <label for="editPhone">Phone Number</label>
+                <input type="tel" id="editPhone" placeholder="9876543210">
+            </div>
+            <div class="form-field">
+                <label for="editPlan">Membership Plan</label>
+                <select id="editPlan">
+                    <option value="1">1 Month - Rs 1000</option>
+                    <option value="3">3 Months - Rs 2700</option>
+                    <option value="6">6 Months - Rs 4800</option>
+                    <option value="12">1 Year - Rs 8400</option>
+                </select>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn-outline" onclick="closeEditModal()">Cancel</button>
+                <button type="button" class="btn" onclick="saveMemberUpdates()">Save Changes</button>
+            </div>
+        </div>
     </div>
 
     <div id="toastContainer" class="toast-container" aria-live="polite" aria-atomic="true"></div>
