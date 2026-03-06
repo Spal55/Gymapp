@@ -49,6 +49,10 @@
                     <span>Expiring in 7 Days</span>
                     <strong id="expiringSoonCount">0</strong>
                 </article>
+                <article class="stat-chip danger">
+                    <span>Total Due Months</span>
+                    <strong id="totalDueMonthsCount">0</strong>
+                </article>
             </div>
             <button onclick="handleLogout()" class="btn-outline">Logout</button>
         </header>
@@ -82,6 +86,10 @@
                         <option value="12">1 Year - Rs 8400</option>
                     </select>
                 </div>
+                <div class="form-field">
+                    <label for="paidMonthsBaseline">Paid Months Till Now (Manual Baseline)</label>
+                    <input type="number" id="paidMonthsBaseline" value="0" min="0" placeholder="0">
+                </div>
                 <button onclick="addMember()" class="btn">Register & Save</button>
             </div>
         </section>
@@ -97,7 +105,9 @@
                             <th>Name</th>
                             <th>Phone</th>
                             <th>Plan</th>
-                            <th>Bill</th>
+                            <th>Monthly Bill</th>
+                            <th>Paid Months</th>
+                            <th>Due Months</th>
                             <th>Expiry Date</th>
                             <th>Actions</th>
                         </tr>
@@ -130,9 +140,76 @@
                     <option value="12">1 Year - Rs 8400</option>
                 </select>
             </div>
+            <div class="form-field">
+                <label for="editPaidMonthsBaseline">Paid Months Till Now (Manual Baseline)</label>
+                <input type="number" id="editPaidMonthsBaseline" min="0" placeholder="0">
+            </div>
             <div class="modal-actions">
                 <button type="button" class="btn-outline" onclick="closeEditModal()">Cancel</button>
                 <button type="button" class="btn" onclick="saveMemberUpdates()">Save Changes</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="paymentModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="paymentTitle">
+        <div class="modal-card">
+            <h3 id="paymentTitle">Confirm Monthly Payment</h3>
+            <p class="subtitle">Select billing month/year. Today's date is auto-used as payment date.</p>
+            <div class="form-field">
+                <label for="payMemberId">Member ID</label>
+                <input type="text" id="payMemberId" readonly>
+            </div>
+            <div class="form-field">
+                <label for="payMemberName">Member Name</label>
+                <input type="text" id="payMemberName" readonly>
+            </div>
+            <div class="split-fields">
+                <div class="form-field">
+                    <label for="paymentMonth">Billing Month</label>
+                    <select id="paymentMonth"></select>
+                </div>
+                <div class="form-field">
+                    <label for="paymentYear">Billing Year</label>
+                    <select id="paymentYear"></select>
+                </div>
+            </div>
+            <div class="form-field">
+                <label for="payAmount">Amount to Charge</label>
+                <input type="text" id="payAmount" readonly>
+            </div>
+            <div class="form-field">
+                <label for="paymentNotes">Notes (optional)</label>
+                <input type="text" id="paymentNotes" placeholder="Any remarks for this receipt">
+            </div>
+            <p id="paymentSummary" class="helper-text"></p>
+            <div class="modal-actions">
+                <button type="button" class="btn-outline" onclick="closePaymentModal()">Cancel</button>
+                <button type="button" class="btn-pay-solid" onclick="confirmMonthlyPayment()">Confirm & Send Bill</button>
+            </div>
+        </div>
+    </div>
+
+    <div id="paymentHistoryModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="historyTitle">
+        <div class="modal-card modal-wide">
+            <h3 id="historyTitle">Payment History</h3>
+            <p id="historyMemberTitle" class="subtitle"></p>
+            <p id="historySummary" class="helper-text"></p>
+            <div class="table-container">
+                <table>
+                    <thead>
+                        <tr>
+                            <th>Billing Month</th>
+                            <th>Payment Date</th>
+                            <th>Amount</th>
+                            <th>Receipt</th>
+                            <th>Notes</th>
+                        </tr>
+                    </thead>
+                    <tbody id="paymentHistoryBody"></tbody>
+                </table>
+            </div>
+            <div class="modal-actions">
+                <button type="button" class="btn-outline" onclick="closePaymentHistoryModal()">Close</button>
             </div>
         </div>
     </div>
