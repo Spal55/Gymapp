@@ -57,72 +57,98 @@
             <button onclick="handleLogout()" class="btn-outline">Logout</button>
         </header>
 
-        <section class="card card-spotlight">
-            <h3>Add New Member</h3>
-            <p class="subtitle">Capture details and auto-calculate plan expiry instantly.</p>
-            <div class="grid-form">
-                <div class="form-field">
-                    <label for="memberId">Member ID</label>
-                    <input type="text" id="memberId" placeholder="PF-001">
+        <div class="page-nav">
+            <button id="navOverview" class="page-tab active" onclick="switchPage('overview')">Overview</button>
+            <button id="navMembers" class="page-tab" onclick="switchPage('members')">Members</button>
+        </div>
+
+        <section id="overviewPage">
+            <section class="card card-spotlight">
+                <h3>Add New Member</h3>
+                <p class="subtitle">Capture details and auto-calculate plan expiry instantly.</p>
+                <div class="grid-form">
+                    <div class="form-field">
+                        <label for="memberId">Member ID</label>
+                        <input type="text" id="memberId" placeholder="PF-001">
+                    </div>
+                    <div class="form-field">
+                        <label for="fullName">Full Name</label>
+                        <input type="text" id="fullName" placeholder="Aarav Sharma">
+                    </div>
+                    <div class="form-field">
+                        <label for="phone">Phone Number</label>
+                        <input type="tel" id="phone" placeholder="9876543210">
+                    </div>
+                    <div class="form-field">
+                        <label for="joinDate">Join Date</label>
+                        <input type="date" id="joinDate">
+                    </div>
+                    <div class="form-field">
+                        <label for="plan">Membership Plan</label>
+                        <select id="plan">
+                            <option value="1">1 Month - Rs 1000</option>
+                            <option value="3">3 Months - Rs 2700</option>
+                            <option value="6">6 Months - Rs 4800</option>
+                            <option value="12">1 Year - Rs 8400</option>
+                        </select>
+                    </div>
+                    <div class="form-field">
+                        <label for="paidMonthsBaseline">Paid Months Till Now (Manual Baseline)</label>
+                        <input type="number" id="paidMonthsBaseline" value="0" min="0" placeholder="0">
+                    </div>
+                    <div class="form-field">
+                        <label for="memberStatus">Member Status</label>
+                        <select id="memberStatus">
+                            <option value="active">Active</option>
+                            <option value="inactive">Inactive</option>
+                        </select>
+                    </div>
+                    <button onclick="addMember()" class="btn">Register & Save</button>
                 </div>
-                <div class="form-field">
-                    <label for="fullName">Full Name</label>
-                    <input type="text" id="fullName" placeholder="Aarav Sharma">
-                </div>
-                <div class="form-field">
-                    <label for="phone">Phone Number</label>
-                    <input type="tel" id="phone" placeholder="9876543210">
-                </div>
-                <div class="form-field">
-                    <label for="joinDate">Join Date</label>
-                    <input type="date" id="joinDate">
-                </div>
-                <div class="form-field">
-                    <label for="plan">Membership Plan</label>
-                    <select id="plan">
-                        <option value="1">1 Month - Rs 1000</option>
-                        <option value="3">3 Months - Rs 2700</option>
-                        <option value="6">6 Months - Rs 4800</option>
-                        <option value="12">1 Year - Rs 8400</option>
-                    </select>
-                </div>
-                <div class="form-field">
-                    <label for="paidMonthsBaseline">Paid Months Till Now (Manual Baseline)</label>
-                    <input type="number" id="paidMonthsBaseline" value="0" min="0" placeholder="0">
-                </div>
-                <button onclick="addMember()" class="btn">Register & Save</button>
-            </div>
+            </section>
         </section>
 
-        <section class="card">
-            <h3>Active Members</h3>
-            <p class="subtitle">Sorted by expiry date to help you prioritize follow-ups.</p>
-            <div class="table-container">
-                <table>
-                    <thead>
-                        <tr>
-                            <th>Member ID</th>
-                            <th>Name</th>
-                            <th>Phone</th>
-                            <th>Plan</th>
-                            <th>Monthly Bill</th>
-                            <th>Paid Months</th>
-                            <th>Due Months</th>
-                            <th>Expiry Date</th>
-                            <th>Actions</th>
-                        </tr>
-                    </thead>
-                    <tbody id="membersTableBody">
-                    </tbody>
-                </table>
-            </div>
+        <section id="membersPage" style="display: none;">
+            <section class="card">
+                <h3>Members Dashboard</h3>
+                <p class="subtitle">Search by Member ID, track dues, and send bill after payment confirmation.</p>
+                <div class="form-field">
+                    <label for="memberSearchInput">Search Member by ID</label>
+                    <input type="text" id="memberSearchInput" placeholder="Type member ID like PF-001">
+                </div>
+            </section>
+
+            <section class="card">
+                <h3>Member List</h3>
+                <p class="subtitle">Sorted by expiry date to help you prioritize follow-ups.</p>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Member ID</th>
+                                <th>Name</th>
+                                <th>Phone</th>
+                                <th>Plan</th>
+                                <th>Plan Amount</th>
+                                <th>Status</th>
+                                <th>Paid Months</th>
+                                <th>Due Months</th>
+                                <th>Expiry Date</th>
+                                <th>Actions</th>
+                            </tr>
+                        </thead>
+                        <tbody id="membersTableBody">
+                        </tbody>
+                    </table>
+                </div>
+            </section>
         </section>
     </div>
 
     <div id="editMemberModal" class="modal-backdrop hidden" role="dialog" aria-modal="true" aria-labelledby="editMemberTitle">
         <div class="modal-card">
             <h3 id="editMemberTitle">Update Member</h3>
-            <p class="subtitle">Change mobile number and package. Next billing date will update from today.</p>
+            <p class="subtitle">Change phone, package, baseline and status. Expiry recalculates from join date.</p>
             <div class="form-field">
                 <label for="editMemberId">Member ID</label>
                 <input type="text" id="editMemberId" readonly>
@@ -143,6 +169,13 @@
             <div class="form-field">
                 <label for="editPaidMonthsBaseline">Paid Months Till Now (Manual Baseline)</label>
                 <input type="number" id="editPaidMonthsBaseline" min="0" placeholder="0">
+            </div>
+            <div class="form-field">
+                <label for="editMemberStatus">Member Status</label>
+                <select id="editMemberStatus">
+                    <option value="active">Active</option>
+                    <option value="inactive">Inactive</option>
+                </select>
             </div>
             <div class="modal-actions">
                 <button type="button" class="btn-outline" onclick="closeEditModal()">Cancel</button>
@@ -174,7 +207,7 @@
                 </div>
             </div>
             <div class="form-field">
-                <label for="payAmount">Amount to Charge</label>
+                <label for="payAmount">Plan Amount to Charge</label>
                 <input type="text" id="payAmount" readonly>
             </div>
             <div class="form-field">
@@ -184,7 +217,7 @@
             <p id="paymentSummary" class="helper-text"></p>
             <div class="modal-actions">
                 <button type="button" class="btn-outline" onclick="closePaymentModal()">Cancel</button>
-                <button type="button" class="btn-pay-solid" onclick="confirmMonthlyPayment()">Confirm & Send Bill</button>
+                <button type="button" class="btn-pay-solid" onclick="confirmMonthlyPayment()">Confirm Payment</button>
             </div>
         </div>
     </div>

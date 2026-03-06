@@ -25,6 +25,9 @@ let paymentsByMemberKey = new Map();
 let editingMemberIndex = null;
 let paymentMemberIndex = null;
 let historyMemberIndex = null;
+let activePage = 'overview';
+let memberSearchTerm = '';
+let memberStatusColumnAvailable = true;
 let paymentTableAvailable = true;
 let paymentTableWarned = false;
 
@@ -104,6 +107,15 @@ function formatMonthYear(month, year) {
     return `${monthName} ${year}`;
 }
 
+function formatMonthYearFromDate(dateText) {
+    const parsed = parseLocalDate(dateText);
+    if (!parsed) return dateText;
+    return new Intl.DateTimeFormat('en-IN', {
+        month: 'short',
+        year: 'numeric'
+    }).format(parsed);
+}
+
 function formatRupees(amount) {
     return new Intl.NumberFormat('en-IN', {
         style: 'currency',
@@ -120,17 +132,22 @@ function getPlanLabel(planMonths) {
     return PLAN_LABELS[String(planMonths)] || `${planMonths} Months`;
 }
 
-function getMonthlyCharge(planMonths) {
-    const months = Number(planMonths) || 1;
-    const total = getPlanAmount(planMonths);
-    return Number((total / months).toFixed(2));
-}
-
 function parseLocalDate(dateText) {
     if (!dateText) return null;
     const value = `${dateText}T00:00:00`;
     const date = new Date(value);
     return Number.isNaN(date.getTime()) ? null : date;
+}
+
+function formatIsoLocalDate(date) {
+    const local = new Date(date.getTime() - date.getTimezoneOffset() * 60000);
+    return local.toISOString().slice(0, 10);
+}
+
+function getMonthStartDate(dateText) {
+    const parsed = parseLocalDate(dateText);
+    if (!parsed) return null;
+    return new Date(parsed.getFullYear(), parsed.getMonth(), 1);
 }
 
 function getTodayIsoDate() {
@@ -152,6 +169,11 @@ function getMemberKey(member) {
     return String(member?.id || member?.member_id || '');
 }
 
+function isMemberActive(member) {
+    if (memberStatusColumnAvailable && member?.is_active === false) return false;
+    return true;
+}
+
 function getPaymentListForMember(member) {
     return paymentsByMemberKey.get(getMemberKey(member)) || [];
 }
@@ -171,17 +193,48 @@ function getRequiredMonthsTillNow(member) {
     return (nowMonthIndex - joinMonthIndex) + 1;
 }
 
-function getConfirmedMonthSet(member) {
+function getMonthYearFromIndex(index) {
+    const year = Math.floor(index / 12);
+    const month = (index % 12) + 1;
+    return { month, year };
+}
+
+function getCoverageKeys(startMonth, startYear, durationMonths) {
+    const keys = [];
+    const startIdx = toMonthIndex(startYear, startMonth);
+    for (let i = 0; i < durationMonths; i += 1) {
+        const { month, year } = getMonthYearFromIndex(startIdx + i);
+        keys.push(`${year}-${String(month).padStart(2, '0')}`);
+    }
+    return keys;
+}
+
+function getCoverageRangeLabel(startMonth, startYear, durationMonths) {
+    const start = formatMonthYear(startMonth, startYear);
+    if (durationMonths <= 1) return start;
+    const endIdx = toMonthIndex(startYear, startMonth) + durationMonths - 1;
+    const end = getMonthYearFromIndex(endIdx);
+    return `${start} to ${formatMonthYear(end.month, end.year)}`;
+}
+
+function getConfirmedMonthSet(member, includeFuture = false) {
     const set = new Set();
     const nowMonthIndex = getCurrentMonthIndex();
 
     for (const payment of getPaymentListForMember(member)) {
         const month = Number(payment.billing_month);
         const year = Number(payment.billing_year);
+        const duration = Number(payment.plan_months_snapshot || 1);
         if (!month || !year) continue;
-        const idx = toMonthIndex(year, month);
-        if (idx > nowMonthIndex) continue;
-        set.add(`${year}-${String(month).padStart(2, '0')}`);
+        const coverage = getCoverageKeys(month, year, duration);
+        for (const key of coverage) {
+            if (!includeFuture) {
+                const [keyYear, keyMonth] = key.split('-').map(Number);
+                const idx = toMonthIndex(keyYear, keyMonth);
+                if (idx > nowMonthIndex) continue;
+            }
+            set.add(key);
+        }
     }
 
     return set;
@@ -198,9 +251,19 @@ function getDueMonths(member) {
 }
 
 function calculateExpiry(startDate, months) {
-    const date = new Date(startDate);
-    date.setMonth(date.getMonth() + Number.parseInt(months, 10));
-    return date.toISOString().split('T')[0];
+    const monthStart = getMonthStartDate(startDate);
+    if (!monthStart) return startDate;
+    const cycleMonths = Number.parseInt(months, 10) || 1;
+    const expiry = new Date(monthStart.getFullYear(), monthStart.getMonth() + cycleMonths, 1);
+    return formatIsoLocalDate(expiry);
+}
+
+function calculateExpiryFromBillingMonth(billingMonth, billingYear, durationMonths = 1) {
+    const month = Number(billingMonth);
+    const year = Number(billingYear);
+    const duration = Number(durationMonths) || 1;
+    const expiry = new Date(year, (month - 1) + duration, 1);
+    return formatIsoLocalDate(expiry);
 }
 
 function clearMemberForm() {
@@ -210,6 +273,7 @@ function clearMemberForm() {
     document.getElementById('joinDate').value = '';
     document.getElementById('plan').value = '1';
     document.getElementById('paidMonthsBaseline').value = '0';
+    document.getElementById('memberStatus').value = 'active';
 }
 
 function updateStats(members) {
@@ -224,7 +288,8 @@ function updateStats(members) {
 
     const totalDueMonths = members.reduce((sum, member) => sum + getDueMonths(member), 0);
 
-    document.getElementById('activeCount').textContent = String(members.length);
+    const activeMembers = members.filter((member) => isMemberActive(member)).length;
+    document.getElementById('activeCount').textContent = String(activeMembers);
     document.getElementById('expiringSoonCount').textContent = String(expiringSoon);
     document.getElementById('totalDueMonthsCount').textContent = String(totalDueMonths);
 }
@@ -282,6 +347,7 @@ async function checkUser() {
         if (session) {
             document.getElementById('loginSection').style.display = 'none';
             document.getElementById('dashboardSection').style.display = 'block';
+            switchPage('overview');
             fetchMembers();
         } else {
             document.getElementById('loginSection').style.display = 'flex';
@@ -301,6 +367,7 @@ async function addMember() {
         const joinDate = document.getElementById('joinDate').value;
         const months = document.getElementById('plan').value;
         const paidBaseline = Number.parseInt(document.getElementById('paidMonthsBaseline').value, 10) || 0;
+        const status = document.getElementById('memberStatus').value;
 
         if (!memberId || !name || !phone || !joinDate || !months) {
             showToast('info', 'Missing Details', 'Please fill in all member fields.');
@@ -338,8 +405,16 @@ async function addMember() {
             expiry_date: expiryDate,
             paid_months_baseline: paidBaseline
         };
+        if (memberStatusColumnAvailable) payload.is_active = status !== 'inactive';
 
-        const { error } = await supabaseClient.from('members').insert([payload]);
+        let { error } = await supabaseClient.from('members').insert([payload]);
+        if (error && memberStatusColumnAvailable && error.message.includes('is_active')) {
+            memberStatusColumnAvailable = false;
+            const fallbackPayload = { ...payload };
+            delete fallbackPayload.is_active;
+            error = (await supabaseClient.from('members').insert([fallbackPayload])).error;
+            if (!error) showToast('info', 'Status Column Missing', 'Member added. Run SQL update to enable active/inactive status.');
+        }
 
         if (error) {
             appLogger.warn('Add member failed', { reason: error.message, payload });
@@ -368,6 +443,7 @@ function openEditMemberModal(index) {
     document.getElementById('editPhone').value = member.phone_number || '';
     document.getElementById('editPlan').value = String(member.plan_months || '1');
     document.getElementById('editPaidMonthsBaseline').value = String(getPaidMonthsBaseline(member));
+    document.getElementById('editMemberStatus').value = isMemberActive(member) ? 'active' : 'inactive';
     document.getElementById('editMemberModal').classList.remove('hidden');
 }
 
@@ -392,6 +468,7 @@ async function saveMemberUpdates() {
         const phone = document.getElementById('editPhone').value.trim();
         const planMonths = document.getElementById('editPlan').value;
         const paidBaseline = Number.parseInt(document.getElementById('editPaidMonthsBaseline').value, 10) || 0;
+        const status = document.getElementById('editMemberStatus').value;
 
         if (!/^\d{10}$/.test(phone)) {
             showToast('error', 'Invalid Phone', 'Phone number must be exactly 10 digits.');
@@ -411,6 +488,7 @@ async function saveMemberUpdates() {
             expiry_date: newExpiry,
             paid_months_baseline: paidBaseline
         };
+        if (memberStatusColumnAvailable) updatePayload.is_active = status !== 'inactive';
 
         let query = supabaseClient.from('members').update(updatePayload);
         if (member.id !== undefined && member.id !== null) {
@@ -419,7 +497,20 @@ async function saveMemberUpdates() {
             query = query.eq('member_id', member.member_id);
         }
 
-        const { error } = await query;
+        let { error } = await query;
+        if (error && memberStatusColumnAvailable && error.message.includes('is_active')) {
+            memberStatusColumnAvailable = false;
+            const fallbackPayload = { ...updatePayload };
+            delete fallbackPayload.is_active;
+            let fallbackQuery = supabaseClient.from('members').update(fallbackPayload);
+            if (member.id !== undefined && member.id !== null) {
+                fallbackQuery = fallbackQuery.eq('id', member.id);
+            } else {
+                fallbackQuery = fallbackQuery.eq('member_id', member.member_id);
+            }
+            error = (await fallbackQuery).error;
+            if (!error) showToast('info', 'Status Column Missing', 'Member updated. Run SQL update to enable active/inactive status.');
+        }
 
         if (error) {
             appLogger.warn('Update member failed', { reason: error.message, updatePayload, member });
@@ -525,25 +616,34 @@ async function fetchPaymentsForMembers(members) {
 function renderMembers() {
     const tbody = document.getElementById('membersTableBody');
     updateStats(currentMembers);
+    const visibleMembers = currentMembers.filter((member) => {
+        if (!memberSearchTerm) return true;
+        const code = String(member.member_id || '').toLowerCase();
+        return code.includes(memberSearchTerm);
+    });
 
-    if (!currentMembers.length) {
+    if (!visibleMembers.length) {
         tbody.innerHTML = `
             <tr>
-                <td class="empty" colspan="9">No members added yet. Register your first member above.</td>
+                <td class="empty" colspan="10">${currentMembers.length ? 'No matching member for search.' : 'No members added yet. Register your first member above.'}</td>
             </tr>
         `;
         return;
     }
 
-    tbody.innerHTML = currentMembers.map((member, index) => {
+    tbody.innerHTML = visibleMembers.map((member) => {
+        const index = currentMembers.findIndex((m) => getMemberKey(m) === getMemberKey(member));
         const memberId = escapeHtml(member.member_id || '-');
         const fullName = escapeHtml(member.full_name || 'Unknown');
         const phone = escapeHtml(member.phone_number || '-');
         const planMonths = String(member.plan_months || '1');
         const planLabel = escapeHtml(getPlanLabel(planMonths));
-        const monthlyBill = formatRupees(getMonthlyCharge(planMonths));
+        const planBill = formatRupees(getPlanAmount(planMonths));
         const paidMonths = getPaidMonthsTillNow(member);
         const dueMonths = getDueMonths(member);
+        const active = isMemberActive(member);
+        const latestPayment = getLatestPayment(member);
+        const billEnabled = Boolean(latestPayment);
 
         return `
             <tr>
@@ -551,20 +651,34 @@ function renderMembers() {
                 <td>${fullName}</td>
                 <td>${phone}</td>
                 <td><span class="plan-pill">${planLabel}</span></td>
-                <td>${monthlyBill}</td>
+                <td>${planBill}</td>
+                <td><span class="stat-pill ${active ? 'good' : 'inactive'}">${active ? 'Active' : 'Inactive'}</span></td>
                 <td><span class="stat-pill good">${paidMonths}</span></td>
                 <td><span class="stat-pill ${dueMonths > 0 ? 'warn' : 'good'}">${dueMonths}</span></td>
-                <td>${escapeHtml(formatDate(member.expiry_date || '-'))}</td>
+                <td>${escapeHtml(formatMonthYearFromDate(member.expiry_date || '-'))}</td>
                 <td>
                     <div class="action-group">
                         <button class="btn-edit" onclick="openEditMemberModal(${index})">Edit</button>
                         <button class="btn-pay" onclick="openPaymentModal(${index})">Confirm Pay</button>
+                        <button class="btn-bill ${billEnabled ? '' : 'is-disabled'}" onclick="sendLatestBillForMember(${index})" ${billEnabled ? '' : 'disabled'}>Send Bill</button>
                         <button class="btn-history" onclick="openPaymentHistoryModal(${index})">History</button>
+                        <button class="btn-status" onclick="toggleMemberStatus(${index})">${active ? 'Set Inactive' : 'Set Active'}</button>
                     </div>
                 </td>
             </tr>
         `;
     }).join('');
+}
+
+function getLatestPayment(member) {
+    const list = getPaymentListForMember(member);
+    if (!list.length) return null;
+    const sorted = list.slice().sort((a, b) => {
+        const aDate = new Date(a.payment_date || a.created_at || 0).getTime();
+        const bDate = new Date(b.payment_date || b.created_at || 0).getTime();
+        return bDate - aDate;
+    });
+    return sorted[0];
 }
 
 function openPaymentModal(index) {
@@ -578,7 +692,7 @@ function openPaymentModal(index) {
     const today = new Date();
     const currentMonth = today.getMonth() + 1;
     const currentYear = today.getFullYear();
-    const monthlyAmount = getMonthlyCharge(member.plan_months);
+    const planAmount = getPlanAmount(member.plan_months);
 
     const monthSelect = document.getElementById('paymentMonth');
     const yearSelect = document.getElementById('paymentYear');
@@ -592,7 +706,7 @@ function openPaymentModal(index) {
 
     document.getElementById('payMemberId').value = member.member_id || '-';
     document.getElementById('payMemberName').value = member.full_name || '-';
-    document.getElementById('payAmount').value = formatRupees(monthlyAmount);
+    document.getElementById('payAmount').value = formatRupees(planAmount);
     document.getElementById('paymentNotes').value = '';
     monthSelect.value = String(currentMonth);
     yearSelect.value = String(currentYear);
@@ -614,11 +728,14 @@ function refreshPaymentPreview() {
     const selectedMonth = Number(document.getElementById('paymentMonth').value);
     const selectedYear = Number(document.getElementById('paymentYear').value);
     const summary = document.getElementById('paymentSummary');
-    const key = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}`;
-    const confirmed = getConfirmedMonthSet(member).has(key);
+    const duration = Number(member.plan_months || 1);
+    const coverage = getCoverageKeys(selectedMonth, selectedYear, duration);
+    const confirmedSet = getConfirmedMonthSet(member, true);
+    const hasConflict = coverage.some((key) => confirmedSet.has(key));
     const dueMonthsBefore = getDueMonths(member);
+    const rangeLabel = getCoverageRangeLabel(selectedMonth, selectedYear, duration);
 
-    summary.textContent = `${formatMonthYear(selectedMonth, selectedYear)} | Due months before this payment: ${dueMonthsBefore}${confirmed ? ' | Already confirmed' : ''}`;
+    summary.textContent = `${rangeLabel} | Amount: ${formatRupees(getPlanAmount(member.plan_months))} | Due months before this payment: ${dueMonthsBefore}${hasConflict ? ' | Overlaps an existing paid period' : ''}`;
 }
 
 function getBaselineCoverageEndIndex(member) {
@@ -638,6 +755,8 @@ function makeReceiptNumber(member, year, month) {
 }
 
 function buildWhatsAppBillText(member, paymentInfo) {
+    const duration = Number(paymentInfo.duration || member.plan_months || 1);
+    const coverageRange = getCoverageRangeLabel(paymentInfo.month, paymentInfo.year, duration);
     const lines = [
         'PulseForge Gym - Payment Receipt',
         `Receipt No: ${paymentInfo.receiptNo}`,
@@ -648,8 +767,9 @@ function buildWhatsAppBillText(member, paymentInfo) {
         `Phone: ${member.phone_number}`,
         '',
         `Plan: ${getPlanLabel(member.plan_months)} (${formatRupees(getPlanAmount(member.plan_months))})`,
-        `Billing Month: ${formatMonthYear(paymentInfo.month, paymentInfo.year)}`,
+        `Coverage: ${coverageRange}`,
         `Amount Received: ${formatRupees(paymentInfo.amount)}`,
+        `Expiry (Month/Year): ${formatMonthYearFromDate(paymentInfo.expiryDate || member.expiry_date || '-')}`,
         `Paid Months Till Now: ${paymentInfo.paidMonthsAfter}`,
         `Due Months Pending: ${paymentInfo.dueMonthsAfter}`,
         paymentInfo.notes ? `Notes: ${paymentInfo.notes}` : '',
@@ -682,7 +802,8 @@ async function confirmMonthlyPayment() {
         const selectedYear = Number(document.getElementById('paymentYear').value);
         const notes = document.getElementById('paymentNotes').value.trim();
         const todayIso = getTodayIsoDate();
-        const amount = getMonthlyCharge(member.plan_months);
+        const duration = Number(member.plan_months || 1);
+        const amount = getPlanAmount(member.plan_months);
 
         const joinDate = parseLocalDate(member.join_date);
         if (!joinDate) {
@@ -703,18 +824,20 @@ async function confirmMonthlyPayment() {
         }
 
         const baselineCoverageEnd = getBaselineCoverageEndIndex(member);
+        const coverageEndIndex = selectedIndex + duration - 1;
         if (baselineCoverageEnd !== null && selectedIndex <= baselineCoverageEnd) {
             showToast('error', 'Already Paid in Baseline', 'This month is already covered by baseline paid months.');
             return;
         }
-
-        const monthKey = `${selectedYear}-${String(selectedMonth).padStart(2, '0')}`;
-        if (getConfirmedMonthSet(member).has(monthKey)) {
-            showToast('error', 'Duplicate Payment', 'Payment already confirmed for this month.');
+        const confirmedSet = getConfirmedMonthSet(member, true);
+        const coverageKeys = getCoverageKeys(selectedMonth, selectedYear, duration);
+        if (coverageKeys.some((key) => confirmedSet.has(key))) {
+            showToast('error', 'Duplicate Payment', 'Payment already confirmed for one or more months in this plan period.');
             return;
         }
 
         const receiptNo = makeReceiptNumber(member, selectedYear, selectedMonth);
+        const newExpiry = calculateExpiryFromBillingMonth(selectedMonth, selectedYear, duration);
         const insertPayload = {
             member_uuid: member.id || null,
             member_id: member.member_id,
@@ -723,7 +846,7 @@ async function confirmMonthlyPayment() {
             amount_paid: amount,
             payment_date: todayIso,
             receipt_no: receiptNo,
-            plan_months_snapshot: Number(member.plan_months || 1),
+            plan_months_snapshot: duration,
             plan_amount_snapshot: getPlanAmount(member.plan_months),
             notes: notes || null
         };
@@ -735,27 +858,116 @@ async function confirmMonthlyPayment() {
             return;
         }
 
-        const duesAfter = Math.max(getDueMonths(member) - 1, 0);
-        const paidAfter = getPaidMonthsTillNow(member) + 1;
-        const billText = buildWhatsAppBillText(member, {
-            receiptNo,
-            paymentDate: todayIso,
-            month: selectedMonth,
-            year: selectedYear,
-            amount,
-            dueMonthsAfter: duesAfter,
-            paidMonthsAfter: paidAfter,
-            notes
-        });
+        let expiryUpdateQuery = supabaseClient.from('members').update({ expiry_date: newExpiry });
+        if (member.id !== undefined && member.id !== null) {
+            expiryUpdateQuery = expiryUpdateQuery.eq('id', member.id);
+        } else {
+            expiryUpdateQuery = expiryUpdateQuery.eq('member_id', member.member_id);
+        }
+        const { error: expiryError } = await expiryUpdateQuery;
+        if (expiryError) {
+            appLogger.warn('Expiry update after payment failed', { reason: expiryError.message, member, newExpiry });
+            showToast('info', 'Payment Saved', 'Payment saved but expiry date update failed. Please retry edit/save.');
+        }
 
         closePaymentModal();
-        showToast('success', 'Payment Confirmed', `${member.full_name}: ${formatMonthYear(selectedMonth, selectedYear)} marked as paid.`);
-        sendWhatsAppText(member.phone_number, billText, member.full_name);
+        showToast('success', 'Payment Confirmed', `${member.full_name}: ${getCoverageRangeLabel(selectedMonth, selectedYear, duration)} marked as paid. Use Send Bill to share receipt.`);
         await fetchMembers();
     } catch (error) {
         appLogger.error('Unexpected error during payment confirmation', error);
         showToast('error', 'Unexpected Error', 'Could not confirm payment right now.');
     }
+}
+
+function sendLatestBillForMember(index) {
+    const member = currentMembers[index];
+    if (!member) {
+        showToast('error', 'Member Missing', 'Could not load this member record.');
+        return;
+    }
+
+    const latestPayment = getLatestPayment(member);
+    if (!latestPayment) {
+        showToast('info', 'No Receipt Yet', 'Confirm payment first, then Send Bill will be available.');
+        return;
+    }
+
+    const paidMonths = getPaidMonthsTillNow(member);
+    const dueMonths = getDueMonths(member);
+    const billText = buildWhatsAppBillText(member, {
+        receiptNo: latestPayment.receipt_no || '-',
+        paymentDate: latestPayment.payment_date || latestPayment.created_at || getTodayIsoDate(),
+        month: latestPayment.billing_month,
+        year: latestPayment.billing_year,
+        amount: Number(latestPayment.amount_paid || getPlanAmount(member.plan_months)),
+        duration: Number(latestPayment.plan_months_snapshot || member.plan_months || 1),
+        expiryDate: member.expiry_date,
+        dueMonthsAfter: dueMonths,
+        paidMonthsAfter: paidMonths,
+        notes: latestPayment.notes || ''
+    });
+
+    sendWhatsAppText(member.phone_number, billText, member.full_name);
+}
+
+async function toggleMemberStatus(index) {
+    try {
+        const member = currentMembers[index];
+        if (!member) {
+            showToast('error', 'Member Missing', 'Could not load this member record.');
+            return;
+        }
+
+        if (!memberStatusColumnAvailable) {
+            showToast('error', 'Status Column Missing', 'Run Supabase SQL to enable active/inactive toggle.');
+            return;
+        }
+
+        const nextStatus = !isMemberActive(member);
+        let query = supabaseClient.from('members').update({ is_active: nextStatus });
+        if (member.id !== undefined && member.id !== null) {
+            query = query.eq('id', member.id);
+        } else {
+            query = query.eq('member_id', member.member_id);
+        }
+
+        const { error } = await query;
+        if (error && error.message.includes('is_active')) {
+            memberStatusColumnAvailable = false;
+            showToast('error', 'Status Column Missing', 'Run Supabase SQL to enable active/inactive toggle.');
+            return;
+        }
+        if (error) {
+            appLogger.warn('Toggle member status failed', { reason: error.message, member });
+            showToast('error', 'Status Update Failed', error.message);
+            return;
+        }
+
+        showToast('success', 'Status Updated', `${member.full_name} is now ${nextStatus ? 'Active' : 'Inactive'}.`);
+        await fetchMembers();
+    } catch (error) {
+        appLogger.error('Unexpected error while toggling member status', error);
+        showToast('error', 'Unexpected Error', 'Could not update member status right now.');
+    }
+}
+
+function switchPage(page) {
+    activePage = page;
+    const overview = document.getElementById('overviewPage');
+    const members = document.getElementById('membersPage');
+    const overviewBtn = document.getElementById('navOverview');
+    const membersBtn = document.getElementById('navMembers');
+
+    const isOverview = page === 'overview';
+    overview.style.display = isOverview ? 'block' : 'none';
+    members.style.display = isOverview ? 'none' : 'block';
+    overviewBtn.classList.toggle('active', isOverview);
+    membersBtn.classList.toggle('active', !isOverview);
+}
+
+function handleMemberSearch() {
+    memberSearchTerm = String(document.getElementById('memberSearchInput').value || '').trim().toLowerCase();
+    renderMembers();
 }
 
 function sendWhatsAppText(phone, text, memberName) {
@@ -801,7 +1013,7 @@ function openPaymentHistoryModal(index) {
     } else {
         body.innerHTML = list.map((payment) => `
             <tr>
-                <td>${escapeHtml(formatMonthYear(payment.billing_month, payment.billing_year))}</td>
+                <td>${escapeHtml(getCoverageRangeLabel(payment.billing_month, payment.billing_year, Number(payment.plan_months_snapshot || 1)))}</td>
                 <td>${escapeHtml(formatDate(payment.payment_date || payment.created_at || '-'))}</td>
                 <td>${escapeHtml(formatRupees(payment.amount_paid || 0))}</td>
                 <td>${escapeHtml(payment.receipt_no || '-')}</td>
@@ -842,6 +1054,7 @@ window.addEventListener('unhandledrejection', (event) => {
 
 document.getElementById('paymentMonth').addEventListener('change', refreshPaymentPreview);
 document.getElementById('paymentYear').addEventListener('change', refreshPaymentPreview);
+document.getElementById('memberSearchInput').addEventListener('input', handleMemberSearch);
 
 document.getElementById('editMemberModal').addEventListener('click', (event) => {
     if (event.target.id === 'editMemberModal') closeEditModal();

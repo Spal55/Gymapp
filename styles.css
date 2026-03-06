@@ -150,7 +150,7 @@ input:focus, select:focus {
     box-shadow: 0 0 0 3px rgba(57, 211, 255, 0.2);
 }
 
-.btn, .btn-outline, .btn-wa, .btn-pay, .btn-history, .btn-pay-solid {
+.btn, .btn-outline, .btn-wa, .btn-pay, .btn-history, .btn-pay-solid, .btn-bill, .btn-status {
     border: none;
     border-radius: 12px;
     font-family: "Sora", sans-serif;
@@ -159,7 +159,7 @@ input:focus, select:focus {
     transition: transform 180ms ease, filter 180ms ease;
 }
 
-.btn:hover, .btn-outline:hover, .btn-wa:hover, .btn-pay:hover, .btn-history:hover, .btn-pay-solid:hover {
+.btn:hover, .btn-outline:hover, .btn-wa:hover, .btn-pay:hover, .btn-history:hover, .btn-pay-solid:hover, .btn-bill:hover, .btn-status:hover {
     transform: translateY(-1px);
     filter: brightness(1.05);
 }
@@ -229,6 +229,34 @@ input:focus, select:focus {
     font-weight: 700;
 }
 
+.btn-bill {
+    border: 1px solid rgba(95, 225, 255, 0.42);
+    border-radius: 12px;
+    padding: 8px 11px;
+    color: #dff8ff;
+    background: rgba(14, 53, 71, 0.75);
+    font-family: "Sora", sans-serif;
+    font-weight: 700;
+}
+
+.btn-status {
+    border: 1px solid rgba(255, 177, 107, 0.42);
+    border-radius: 12px;
+    padding: 8px 11px;
+    color: #ffe7ca;
+    background: rgba(76, 50, 20, 0.76);
+    font-family: "Sora", sans-serif;
+    font-weight: 700;
+}
+
+.is-disabled,
+button:disabled {
+    opacity: 0.45;
+    cursor: not-allowed;
+    filter: none !important;
+    transform: none !important;
+}
+
 .topbar {
     display: grid;
     grid-template-columns: 1.4fr 1.5fr auto;
@@ -272,6 +300,33 @@ input:focus, select:focus {
 .card-spotlight {
     position: relative;
     overflow: hidden;
+}
+
+.page-nav {
+    display: inline-flex;
+    gap: 10px;
+    margin-bottom: 16px;
+    border: 1px solid rgba(177, 200, 255, 0.2);
+    border-radius: 14px;
+    background: rgba(18, 27, 52, 0.58);
+    padding: 6px;
+}
+
+.page-tab {
+    border: 1px solid transparent;
+    border-radius: 10px;
+    color: #d6e7ff;
+    background: transparent;
+    padding: 8px 14px;
+    font-family: "Sora", sans-serif;
+    font-weight: 700;
+    cursor: pointer;
+    transition: all 160ms ease;
+}
+
+.page-tab.active {
+    color: #082437;
+    background: linear-gradient(120deg, var(--brand), var(--accent));
 }
 
 .card-spotlight::after {
@@ -363,6 +418,12 @@ tbody tr:hover {
     color: #ffe0b2;
     background: rgba(255, 181, 71, 0.14);
     border-color: rgba(255, 181, 71, 0.35);
+}
+
+.stat-pill.inactive {
+    color: #ffd1d1;
+    background: rgba(255, 106, 142, 0.14);
+    border-color: rgba(255, 106, 142, 0.34);
 }
 
 .action-group {
@@ -552,5 +613,11 @@ tbody tr:hover {
 
     .split-fields {
         grid-template-columns: 1fr;
+    }
+
+    .page-nav {
+        width: 100%;
+        display: grid;
+        grid-template-columns: 1fr 1fr;
     }
 }
