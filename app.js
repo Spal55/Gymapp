@@ -4,6 +4,8 @@ const supabaseClient = window.supabase.createClient(SUPABASE_URL, SUPABASE_KEY);
 
 const ERROR_LOG_KEY = 'gymapp_error_log';
 const ERROR_LOG_LIMIT = 40;
+const GYM_NAME = 'Fitness Point Reloaded 2.0';
+const RECEIPT_PREFIX = 'FPR2';
 const MONTH_NAMES = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December'];
 
 const PLAN_PRICING = {
@@ -27,6 +29,13 @@ let paymentMemberIndex = null;
 let historyMemberIndex = null;
 let activePage = 'overview';
 let memberSearchTerm = '';
+let memberFilters = {
+    dues: 'all',
+    paid: 'all',
+    plan: 'all',
+    joinMonth: 'all',
+    sort: 'member_id_asc'
+};
 let memberStatusColumnAvailable = true;
 let paymentTableAvailable = true;
 let paymentTableWarned = false;
@@ -130,6 +139,12 @@ function getPlanAmount(planMonths) {
 
 function getPlanLabel(planMonths) {
     return PLAN_LABELS[String(planMonths)] || `${planMonths} Months`;
+}
+
+function getMonthlyCharge(planMonths) {
+    const months = Number(planMonths) || 1;
+    const total = getPlanAmount(planMonths);
+    return Number((total / months).toFixed(2));
 }
 
 function parseLocalDate(dateText) {
@@ -620,12 +635,43 @@ function renderMembers() {
         if (!memberSearchTerm) return true;
         const code = String(member.member_id || '').toLowerCase();
         return code.includes(memberSearchTerm);
+    }).filter((member) => {
+        const paidMonths = getPaidMonthsTillNow(member);
+        const dueMonths = getDueMonths(member);
+        const planMonths = String(member.plan_months || '');
+        const joinDate = parseLocalDate(member.join_date);
+        const joinMonth = joinDate ? String(joinDate.getMonth() + 1) : '';
+
+        if (memberFilters.dues === 'due_only' && dueMonths <= 0) return false;
+        if (memberFilters.dues === 'no_due' && dueMonths > 0) return false;
+
+        if (memberFilters.paid === 'paid_only' && paidMonths <= 0) return false;
+        if (memberFilters.paid === 'unpaid_only' && paidMonths > 0) return false;
+
+        if (memberFilters.plan !== 'all' && planMonths !== memberFilters.plan) return false;
+        if (memberFilters.joinMonth !== 'all' && joinMonth !== memberFilters.joinMonth) return false;
+        return true;
+    }).sort((a, b) => {
+        if (memberFilters.sort === 'member_id_desc') {
+            return String(b.member_id || '').localeCompare(String(a.member_id || ''), undefined, { numeric: true, sensitivity: 'base' });
+        }
+        if (memberFilters.sort === 'doj_asc') {
+            const aTime = parseLocalDate(a.join_date)?.getTime() || 0;
+            const bTime = parseLocalDate(b.join_date)?.getTime() || 0;
+            return aTime - bTime;
+        }
+        if (memberFilters.sort === 'doj_desc') {
+            const aTime = parseLocalDate(a.join_date)?.getTime() || 0;
+            const bTime = parseLocalDate(b.join_date)?.getTime() || 0;
+            return bTime - aTime;
+        }
+        return String(a.member_id || '').localeCompare(String(b.member_id || ''), undefined, { numeric: true, sensitivity: 'base' });
     });
 
     if (!visibleMembers.length) {
         tbody.innerHTML = `
             <tr>
-                <td class="empty" colspan="10">${currentMembers.length ? 'No matching member for search.' : 'No members added yet. Register your first member above.'}</td>
+                <td class="empty" colspan="10">${currentMembers.length ? 'No member matches current search/filter.' : 'No members added yet. Register your first member above.'}</td>
             </tr>
         `;
         return;
@@ -644,6 +690,7 @@ function renderMembers() {
         const active = isMemberActive(member);
         const latestPayment = getLatestPayment(member);
         const billEnabled = Boolean(latestPayment);
+        const dueEnabled = dueMonths > 0;
 
         return `
             <tr>
@@ -661,6 +708,8 @@ function renderMembers() {
                         <button class="btn-edit" onclick="openEditMemberModal(${index})">Edit</button>
                         <button class="btn-pay" onclick="openPaymentModal(${index})">Confirm Pay</button>
                         <button class="btn-bill ${billEnabled ? '' : 'is-disabled'}" onclick="sendLatestBillForMember(${index})" ${billEnabled ? '' : 'disabled'}>Send Bill</button>
+                        <button class="btn-pdf ${billEnabled ? '' : 'is-disabled'}" onclick="sendReceiptPdfForMember(${index})" ${billEnabled ? '' : 'disabled'}>PDF/Share</button>
+                        <button class="btn-reminder ${dueEnabled ? '' : 'is-disabled'}" onclick="sendDueReminderForMember(${index})" ${dueEnabled ? '' : 'disabled'}>Due Reminder</button>
                         <button class="btn-history" onclick="openPaymentHistoryModal(${index})">History</button>
                         <button class="btn-status" onclick="toggleMemberStatus(${index})">${active ? 'Set Inactive' : 'Set Active'}</button>
                     </div>
@@ -750,15 +799,18 @@ function getBaselineCoverageEndIndex(member) {
 function makeReceiptNumber(member, year, month) {
     const shortTs = String(Date.now()).slice(-6);
     const monthCode = `${year}${String(month).padStart(2, '0')}`;
-    const memberCode = String(member.member_id || 'MEM').slice(0, 10);
-    return `PF-${memberCode}-${monthCode}-${shortTs}`;
+    const memberCode = String(member.member_id || 'MEM')
+        .replace(/[^A-Z0-9]/gi, '')
+        .toUpperCase()
+        .slice(0, 8) || 'MEM';
+    return `${RECEIPT_PREFIX}-${monthCode}-${memberCode}-${shortTs}`;
 }
 
 function buildWhatsAppBillText(member, paymentInfo) {
     const duration = Number(paymentInfo.duration || member.plan_months || 1);
     const coverageRange = getCoverageRangeLabel(paymentInfo.month, paymentInfo.year, duration);
     const lines = [
-        'PulseForge Gym - Payment Receipt',
+        `${GYM_NAME} - Payment Receipt`,
         `Receipt No: ${paymentInfo.receiptNo}`,
         `Payment Date: ${formatDate(paymentInfo.paymentDate)}`,
         '',
@@ -774,10 +826,24 @@ function buildWhatsAppBillText(member, paymentInfo) {
         `Due Months Pending: ${paymentInfo.dueMonthsAfter}`,
         paymentInfo.notes ? `Notes: ${paymentInfo.notes}` : '',
         '',
-        'Thank you for training with us.'
+        `Thank you for training with ${GYM_NAME}.`
     ];
 
     return lines.filter(Boolean).join('\n');
+}
+
+function buildDueReminderText(member) {
+    const dueMonths = getDueMonths(member);
+    const totalDue = getMonthlyCharge(member.plan_months) * dueMonths;
+    return [
+        `${GYM_NAME} - Payment Reminder`,
+        `Hi ${member.full_name},`,
+        `Your pending dues are ${dueMonths} month(s).`,
+        `Plan: ${getPlanLabel(member.plan_months)} | Monthly Equivalent: ${formatRupees(getMonthlyCharge(member.plan_months))}`,
+        `Approx. due amount: ${formatRupees(totalDue)}`,
+        `Please visit the gym desk to clear dues.`,
+        'Thank you.'
+    ].join('\n');
 }
 
 async function confirmMonthlyPayment() {
@@ -892,22 +958,238 @@ function sendLatestBillForMember(index) {
         return;
     }
 
-    const paidMonths = getPaidMonthsTillNow(member);
-    const dueMonths = getDueMonths(member);
-    const billText = buildWhatsAppBillText(member, {
-        receiptNo: latestPayment.receipt_no || '-',
-        paymentDate: latestPayment.payment_date || latestPayment.created_at || getTodayIsoDate(),
-        month: latestPayment.billing_month,
-        year: latestPayment.billing_year,
-        amount: Number(latestPayment.amount_paid || getPlanAmount(member.plan_months)),
-        duration: Number(latestPayment.plan_months_snapshot || member.plan_months || 1),
-        expiryDate: member.expiry_date,
-        dueMonthsAfter: dueMonths,
-        paidMonthsAfter: paidMonths,
-        notes: latestPayment.notes || ''
-    });
+    const billText = buildWhatsAppBillText(member, getReceiptPayload(member, latestPayment));
 
     sendWhatsAppText(member.phone_number, billText, member.full_name);
+}
+
+function getReceiptPayload(member, payment) {
+    return {
+        receiptNo: payment.receipt_no || '-',
+        paymentDate: payment.payment_date || payment.created_at || getTodayIsoDate(),
+        month: Number(payment.billing_month || 1),
+        year: Number(payment.billing_year || new Date().getFullYear()),
+        amount: Number(payment.amount_paid || getPlanAmount(member.plan_months)),
+        duration: Number(payment.plan_months_snapshot || member.plan_months || 1),
+        expiryDate: member.expiry_date,
+        dueMonthsAfter: getDueMonths(member),
+        paidMonthsAfter: getPaidMonthsTillNow(member),
+        notes: payment.notes || ''
+    };
+}
+
+function getReceiptPdfFileName(member, payload) {
+    const memberCode = String(member.member_id || 'MEM')
+        .replace(/[^A-Z0-9]/gi, '')
+        .toUpperCase();
+    const monthCode = `${payload.year}${String(payload.month).padStart(2, '0')}`;
+    return `${memberCode || 'MEM'}_${monthCode}_receipt.pdf`;
+}
+
+function createReceiptPdfBlob(member, payload) {
+    if (!window.jspdf || !window.jspdf.jsPDF) return null;
+
+    const { jsPDF } = window.jspdf;
+    const doc = new jsPDF({ unit: 'pt', format: 'a4' });
+    const lineGap = 22;
+    let y = 48;
+
+    doc.setFont('helvetica', 'bold');
+    doc.setFontSize(18);
+    doc.text(GYM_NAME, 40, y);
+    y += lineGap;
+
+    doc.setFont('helvetica', 'normal');
+    doc.setFontSize(12);
+    doc.text('Payment Receipt', 40, y);
+    y += lineGap * 1.4;
+
+    const lines = [
+        `Receipt No: ${payload.receiptNo}`,
+        `Payment Date: ${formatDate(payload.paymentDate)}`,
+        `Member: ${member.full_name}`,
+        `Member ID: ${member.member_id}`,
+        `Phone: ${member.phone_number}`,
+        `Plan: ${getPlanLabel(member.plan_months)} (${formatRupees(getPlanAmount(member.plan_months))})`,
+        `Coverage: ${getCoverageRangeLabel(payload.month, payload.year, payload.duration)}`,
+        `Amount Received: ${formatRupees(payload.amount)}`,
+        `Expiry (Month/Year): ${formatMonthYearFromDate(payload.expiryDate || member.expiry_date || '-')}`,
+        `Paid Months Till Now: ${payload.paidMonthsAfter}`,
+        `Due Months Pending: ${payload.dueMonthsAfter}`,
+        payload.notes ? `Notes: ${payload.notes}` : ''
+    ].filter(Boolean);
+
+    for (const line of lines) {
+        doc.text(line, 40, y, { maxWidth: 510 });
+        y += lineGap;
+    }
+
+    y += 8;
+    doc.text(`Thank you for training with ${GYM_NAME}.`, 40, y);
+    return doc.output('blob');
+}
+
+function downloadBlob(blob, fileName) {
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = fileName;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+}
+
+async function sendReceiptPdfForMember(index) {
+    try {
+        const member = currentMembers[index];
+        if (!member) {
+            showToast('error', 'Member Missing', 'Could not load this member record.');
+            return;
+        }
+
+        const latestPayment = getLatestPayment(member);
+        if (!latestPayment) {
+            showToast('info', 'No Receipt Yet', 'Confirm payment first, then PDF sharing will be available.');
+            return;
+        }
+
+        const payload = getReceiptPayload(member, latestPayment);
+        const blob = createReceiptPdfBlob(member, payload);
+        if (!blob) {
+            showToast('error', 'PDF Library Missing', 'PDF generator not available. Refresh and try again.');
+            return;
+        }
+
+        const fileName = getReceiptPdfFileName(member, payload);
+        const file = new File([blob], fileName, { type: 'application/pdf' });
+        const canShareFiles = typeof navigator !== 'undefined'
+            && typeof navigator.share === 'function'
+            && typeof navigator.canShare === 'function'
+            && navigator.canShare({ files: [file] });
+
+        if (canShareFiles) {
+            await navigator.share({
+                title: `${GYM_NAME} Receipt`,
+                text: `Receipt for ${member.full_name}`,
+                files: [file]
+            });
+            showToast('success', 'PDF Shared', 'Receipt PDF shared. Choose WhatsApp from the share sheet.');
+            return;
+        }
+
+        downloadBlob(blob, fileName);
+        const text = `${buildWhatsAppBillText(member, payload)}\n\nPDF downloaded (${fileName}). Please attach it manually in WhatsApp.`;
+        sendWhatsAppText(member.phone_number, text, member.full_name);
+    } catch (error) {
+        if (error?.name === 'AbortError') return;
+        appLogger.error('Failed to generate/share PDF receipt', error);
+        showToast('error', 'PDF Share Failed', 'Could not create or share PDF receipt.');
+    }
+}
+
+function sendDueReminderForMember(index) {
+    const member = currentMembers[index];
+    if (!member) {
+        showToast('error', 'Member Missing', 'Could not load this member record.');
+        return;
+    }
+
+    const dueMonths = getDueMonths(member);
+    if (dueMonths <= 0) {
+        showToast('info', 'No Dues', `${member.full_name} has no pending dues.`);
+        return;
+    }
+
+    const reminder = buildDueReminderText(member);
+    sendWhatsAppText(member.phone_number, reminder, member.full_name);
+}
+
+function escapeCsvCell(value) {
+    const text = String(value ?? '');
+    if (text.includes(',') || text.includes('"') || text.includes('\n')) {
+        return `"${text.replaceAll('"', '""')}"`;
+    }
+    return text;
+}
+
+function downloadCsv(filename, headers, rows) {
+    const lines = [headers.map(escapeCsvCell).join(',')];
+    for (const row of rows) {
+        lines.push(row.map(escapeCsvCell).join(','));
+    }
+    const blob = new Blob([lines.join('\n')], { type: 'text/csv;charset=utf-8;' });
+    const url = URL.createObjectURL(blob);
+    const link = document.createElement('a');
+    link.href = url;
+    link.download = filename;
+    document.body.appendChild(link);
+    link.click();
+    link.remove();
+    URL.revokeObjectURL(url);
+}
+
+function exportMembersCsv() {
+    if (!currentMembers.length) {
+        showToast('info', 'No Data', 'No members available to export.');
+        return;
+    }
+
+    const rows = currentMembers.map((member) => {
+        const dueMonths = getDueMonths(member);
+        const paidMonths = getPaidMonthsTillNow(member);
+        return [
+            member.member_id || '',
+            member.full_name || '',
+            member.phone_number || '',
+            member.join_date || '',
+            member.plan_months || '',
+            getPlanAmount(member.plan_months),
+            member.expiry_date || '',
+            isMemberActive(member) ? 'Active' : 'Inactive',
+            paidMonths,
+            dueMonths
+        ];
+    });
+
+    downloadCsv(
+        `members_${getTodayIsoDate()}.csv`,
+        ['member_id', 'full_name', 'phone_number', 'join_date', 'plan_months', 'plan_amount', 'expiry_date', 'status', 'paid_months_till_now', 'due_months'],
+        rows
+    );
+    showToast('success', 'Export Ready', 'Members CSV downloaded.');
+}
+
+function exportPaymentsCsv() {
+    const rows = [];
+    for (const member of currentMembers) {
+        const payments = getPaymentListForMember(member);
+        for (const payment of payments) {
+            rows.push([
+                payment.receipt_no || '',
+                member.member_id || payment.member_id || '',
+                member.full_name || '',
+                payment.billing_month || '',
+                payment.billing_year || '',
+                payment.plan_months_snapshot || '',
+                payment.amount_paid || '',
+                payment.payment_date || '',
+                payment.notes || ''
+            ]);
+        }
+    }
+
+    if (!rows.length) {
+        showToast('info', 'No Data', 'No payments available to export.');
+        return;
+    }
+
+    downloadCsv(
+        `payments_${getTodayIsoDate()}.csv`,
+        ['receipt_no', 'member_id', 'member_name', 'billing_month', 'billing_year', 'plan_months_snapshot', 'amount_paid', 'payment_date', 'notes'],
+        rows
+    );
+    showToast('success', 'Export Ready', 'Payments CSV downloaded.');
 }
 
 async function toggleMemberStatus(index) {
@@ -967,6 +1249,17 @@ function switchPage(page) {
 
 function handleMemberSearch() {
     memberSearchTerm = String(document.getElementById('memberSearchInput').value || '').trim().toLowerCase();
+    renderMembers();
+}
+
+function handleMembersFilterChange() {
+    memberFilters = {
+        dues: document.getElementById('filterDues').value,
+        paid: document.getElementById('filterPaid').value,
+        plan: document.getElementById('filterPlan').value,
+        joinMonth: document.getElementById('filterJoinMonth').value,
+        sort: document.getElementById('sortMembers').value
+    };
     renderMembers();
 }
 
@@ -1055,6 +1348,11 @@ window.addEventListener('unhandledrejection', (event) => {
 document.getElementById('paymentMonth').addEventListener('change', refreshPaymentPreview);
 document.getElementById('paymentYear').addEventListener('change', refreshPaymentPreview);
 document.getElementById('memberSearchInput').addEventListener('input', handleMemberSearch);
+document.getElementById('filterDues').addEventListener('change', handleMembersFilterChange);
+document.getElementById('filterPaid').addEventListener('change', handleMembersFilterChange);
+document.getElementById('filterPlan').addEventListener('change', handleMembersFilterChange);
+document.getElementById('filterJoinMonth').addEventListener('change', handleMembersFilterChange);
+document.getElementById('sortMembers').addEventListener('change', handleMembersFilterChange);
 
 document.getElementById('editMemberModal').addEventListener('click', (event) => {
     if (event.target.id === 'editMemberModal') closeEditModal();

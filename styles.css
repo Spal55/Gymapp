@@ -150,7 +150,7 @@ input:focus, select:focus {
     box-shadow: 0 0 0 3px rgba(57, 211, 255, 0.2);
 }
 
-.btn, .btn-outline, .btn-wa, .btn-pay, .btn-history, .btn-pay-solid, .btn-bill, .btn-status {
+.btn, .btn-outline, .btn-wa, .btn-pay, .btn-history, .btn-pay-solid, .btn-bill, .btn-status, .btn-reminder, .btn-pdf {
     border: none;
     border-radius: 12px;
     font-family: "Sora", sans-serif;
@@ -159,7 +159,7 @@ input:focus, select:focus {
     transition: transform 180ms ease, filter 180ms ease;
 }
 
-.btn:hover, .btn-outline:hover, .btn-wa:hover, .btn-pay:hover, .btn-history:hover, .btn-pay-solid:hover, .btn-bill:hover, .btn-status:hover {
+.btn:hover, .btn-outline:hover, .btn-wa:hover, .btn-pay:hover, .btn-history:hover, .btn-pay-solid:hover, .btn-bill:hover, .btn-status:hover, .btn-reminder:hover, .btn-pdf:hover {
     transform: translateY(-1px);
     filter: brightness(1.05);
 }
@@ -245,6 +245,26 @@ input:focus, select:focus {
     padding: 8px 11px;
     color: #ffe7ca;
     background: rgba(76, 50, 20, 0.76);
+    font-family: "Sora", sans-serif;
+    font-weight: 700;
+}
+
+.btn-reminder {
+    border: 1px solid rgba(255, 224, 130, 0.42);
+    border-radius: 12px;
+    padding: 8px 11px;
+    color: #ffefc4;
+    background: rgba(80, 66, 24, 0.78);
+    font-family: "Sora", sans-serif;
+    font-weight: 700;
+}
+
+.btn-pdf {
+    border: 1px solid rgba(186, 155, 255, 0.42);
+    border-radius: 12px;
+    padding: 8px 11px;
+    color: #efe4ff;
+    background: rgba(57, 36, 92, 0.78);
     font-family: "Sora", sans-serif;
     font-weight: 700;
 }
@@ -344,6 +364,20 @@ button:disabled {
     display: grid;
     grid-template-columns: repeat(2, minmax(0, 1fr));
     gap: 14px;
+}
+
+.filter-grid {
+    margin-top: 14px;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 14px;
+}
+
+.utility-actions {
+    margin-top: 14px;
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
 }
 
 .grid-form .btn {
@@ -584,10 +618,18 @@ tbody tr:hover {
     .stats-strip {
         grid-template-columns: 1fr;
     }
+
+    .filter-grid {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
 }
 
 @media (max-width: 680px) {
     .grid-form {
+        grid-template-columns: 1fr;
+    }
+
+    .filter-grid {
         grid-template-columns: 1fr;
     }
 
@@ -619,5 +661,13 @@ tbody tr:hover {
         width: 100%;
         display: grid;
         grid-template-columns: 1fr 1fr;
+    }
+
+    .utility-actions {
+        flex-direction: column;
+    }
+
+    .utility-actions .btn-outline {
+        width: 100%;
     }
 }
