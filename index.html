@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>PulseForge Gym Admin</title>
+    <title>Fitness Point Reloaded 2.0</title>
     <link rel="manifest" href="manifest.json">
     <meta name="theme-color" content="#0f172a">
     <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -37,8 +37,8 @@
     <div id="dashboardSection" class="container app-shell" style="display: none;">
         <header class="topbar">
             <div>
-                <p class="eyebrow">PulseForge</p>
-                <h1>Gym Command Center</h1>
+                <p class="eyebrow">Fitness Point Reloaded 2.0</p>
+                <h1>Fitness Point Reloaded 2.0</h1>
             </div>
             <div class="stats-strip">
                 <article class="stat-chip">
@@ -112,9 +112,68 @@
             <section class="card">
                 <h3>Members Dashboard</h3>
                 <p class="subtitle">Search by Member ID, track dues, and send bill after payment confirmation.</p>
-                <div class="form-field">
-                    <label for="memberSearchInput">Search Member by ID</label>
-                    <input type="text" id="memberSearchInput" placeholder="Type member ID like PF-001">
+                <div class="filter-grid">
+                    <div class="form-field">
+                        <label for="memberSearchInput">Search Member by ID</label>
+                        <input type="text" id="memberSearchInput" placeholder="Type member ID like PF-001">
+                    </div>
+                    <div class="form-field">
+                        <label for="filterDues">Filter by Dues</label>
+                        <select id="filterDues">
+                            <option value="all">All</option>
+                            <option value="due_only">Due > 0</option>
+                            <option value="no_due">No Dues</option>
+                        </select>
+                    </div>
+                    <div class="form-field">
+                        <label for="filterPaid">Filter by Paid</label>
+                        <select id="filterPaid">
+                            <option value="all">All</option>
+                            <option value="paid_only">Paid > 0</option>
+                            <option value="unpaid_only">Paid = 0</option>
+                        </select>
+                    </div>
+                    <div class="form-field">
+                        <label for="filterPlan">Membership Type</label>
+                        <select id="filterPlan">
+                            <option value="all">All Plans</option>
+                            <option value="1">1 Month</option>
+                            <option value="3">3 Months</option>
+                            <option value="6">6 Months</option>
+                            <option value="12">1 Year</option>
+                        </select>
+                    </div>
+                    <div class="form-field">
+                        <label for="filterJoinMonth">Month of Joining</label>
+                        <select id="filterJoinMonth">
+                            <option value="all">All Months</option>
+                            <option value="1">January</option>
+                            <option value="2">February</option>
+                            <option value="3">March</option>
+                            <option value="4">April</option>
+                            <option value="5">May</option>
+                            <option value="6">June</option>
+                            <option value="7">July</option>
+                            <option value="8">August</option>
+                            <option value="9">September</option>
+                            <option value="10">October</option>
+                            <option value="11">November</option>
+                            <option value="12">December</option>
+                        </select>
+                    </div>
+                    <div class="form-field">
+                        <label for="sortMembers">Sort By</label>
+                        <select id="sortMembers">
+                            <option value="member_id_asc">Member ID (A to Z)</option>
+                            <option value="member_id_desc">Member ID (Z to A)</option>
+                            <option value="doj_asc">DOJ (Old to New)</option>
+                            <option value="doj_desc">DOJ (New to Old)</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="utility-actions">
+                    <button type="button" class="btn-outline" onclick="exportMembersCsv()">Export Members CSV</button>
+                    <button type="button" class="btn-outline" onclick="exportPaymentsCsv()">Export Payments CSV</button>
                 </div>
             </section>
 
